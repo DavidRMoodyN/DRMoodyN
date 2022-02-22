@@ -1,115 +1,107 @@
---===============================================================================
---  Crear dispositivo de backups múltiples para la BD Adventureworks.
---===============================================================================
--- En la base de datos master
+--========================================================================
+-- BACKUP de segurity
+-- Crear dispositivos multiples
+--========================================================================
+
+-- Tenemos que usar esta bd
 USE master
 GO
 
--- Dispositivo, esto se creara en memoria
-EXEC sp_addumpdevice 'disk','AdventureWorks2019Dispositivo',
-'C:\Programacion\Net\SqlServer\Tareas\QueryTranza\MSSQL2019\Backup\AdventureWorks2019BackupDivice.bak' 
+-- Creamos el dispositivo, esto se creara en memoria
+EXEC sp_addumpdevice 'disk','AdventureWorks2019_Dispositivo',
+'C:\Programacion\NET\SQLServer\Backup\AdventureWorks2019_FULL_Dispositivo.bak' 
 GO
 
--- Lista de los dispositivos creados
+-- Listar los dispositivos creados
 SELECT * FROM sys.backup_devices
 GO
 
--- Crear el primer backup
+-- Borrar dispositivo que borrar tambien el backup
+EXEC sp_dropdevice 'AdventureWorks2019_Dispositivo','delfile'
+GO
+
+-- Crear el primer backup full base
 BACKUP DATABASE AdventureWorks2019
-	TO AdventureWorks2019Dispositivo
-		WITH FORMAT,INIT, NAME = 'AdventureWorks2019FullBackupBase'
+	TO AdventureWorks2019_Dispositivo
+		WITH CHECKSUM, NAME = 'AdventureWorks2019_FULL',
+		DESCRIPTION = 'AdventureWorks2019_FULL Completo'
 GO
 
--- Mirar todos los backup de AdventureWorks2019Dispositivo
-RESTORE HEADERONLY FROM AdventureWorks2019Dispositivo
+-- Verificar el contenido del BACKUP
+RESTORE HEADERONLY FROM AdventureWorks2019_Dispositivo
 GO
 
--- Lista de archivos que contiene el back
-RESTORE FILELISTONLY FROM AdventureWorks2019Dispositivo
+-- Tambien lo podemos hacer de esta manera
+RESTORE HEADERONLY FROM DISK = 
+'C:\Programacion\NET\SQLServer\Backup\AdventureWorks2019_FULL_Dispositivo.bak' 
 GO
 
-SELECT * FROM sys.backup_devices
+--========================================================================
+--Ya puede crear nuevos backup diferenciales de forma dinamyca
+--========================================================================
+USE AdventureWorks2019
 GO
 
--- Borrar backup
---EXEC sp_dropdevice 'AdventureWorks2019Dispositivo','delfile'
---GO
-
---===============================================================================
---Ya puede crear nuevos backup diferenciales
--- Crear un nombre de backup de forma dinamica
---===============================================================================
--- Agregando datos a AdventureWorks2019
-Use AdventureWorks2019
-GO
-
-CREATE SCHEMA Moody
-GO
-
-CREATE TABLE Moody.PersonMoody(
-	MoodyID INT PRIMARY KEY IDENTITY,
-	MoodyName NVARCHAR(40) NOT NULL,
-	IsActivo BIT DEFAULT 1 NOT NULL,
-	CreateDate DATETIME DEFAULT GETDATE()
-)
-GO
-
--- Nombre para el backup dinamico
-CREATE PROC BackupDinamico(@Name NVARCHAR(100))
+-- Nombre para el backup differential dinamico
+CREATE PROC BackupDifferentialAdventureWord(@Name NVARCHAR(100))
 AS
-SET @Name += FORMAT(GETDATE(),'yyyyMMdd_hhmmss')
+BEGIN
+SET @Name +='_Diff_'+FORMAT(GETDATE(),'yyyyMMdd_hhmmss')
 
 BACKUP DATABASE AdventureWorks2019
-	TO AdventureWorks2019Dispositivo
-		WITH DIFFERENTIAL, NAME = @Name
+	TO AdventureWorks2019_Dispositivo
+		WITH CHECKSUM, DIFFERENTIAL, NAME = @Name
+END
 GO
 
--- DROP PROC BackupDinamico
-
-EXEC BackupDinamico 'Adventure'
-
--- Restuar el backup y verificar la nueva tabla
--- Con el nombre AdventureWorks2019Test
--- Agregando datos a AdventureWorks2019
-Use AdventureWorks2019
+EXEC BackupDifferentialAdventureWord 'AdventureWorks2019'
 GO
 
-CREATE TABLE Moody.HijoMoody(
-	HijoID INT PRIMARY KEY IDENTITY,
-	Carrera NVARCHAR(50) NOT NULL,
-	IsActivo BIT DEFAULT 1 NOT NULL,
-	MoodyID INT NOT NULL,
-	CONSTRAINT Fk_Hijo_Ref_Person 
-		FOREIGN KEY(MoodyID) REFERENCES Moody.PersonMoody(MoodyID)
-)
+EXEC BackupDifferentialAdventureWord 'AdventureWorks2019'
 GO
 
-EXEC BackupDinamico 'Adventure'
-
--- Restuar el backup y verificar la nueva tabla
--- Con el nombre AdventureWorks2019Test
-
-RESTORE DATABASE AdventureWorks2019Test
-FROM DISK = N'C:\Programacion\Net\SqlServer\Tareas\QueryTranza\MSSQL2019\Backup\AdventureWorks2019BackupDivice.bak'
-WITH REPLACE
-
-INSERT INTO Moody.PersonMoody(MoodyName)
-VALUES
-('DAVID 1'),
-('DAVID 2'),
-('DAVID 3'),
-('DAVID 4'),
-('DAVID 5')
+EXEC BackupDifferentialAdventureWord 'AdventureWorks2019'
 GO
 
-RESTORE DATABASE AdventureWorks2019Test
-FROM DISK = N'C:\Programacion\Net\SqlServer\Tareas\QueryTranza\MSSQL2019\Backup\AdventureWorks2019BackupDivice.bak'
-WITH REPLACE
-
-INSERT INTO Moody.HijoMoody(Carrera,MoodyID)
-VALUES
-('Programador',1),
-('Programador',2),
-('Programador',3)
+EXEC BackupDifferentialAdventureWord 'AdventureWorks2019'
 GO
 
+--Borrar el proc
+DROP PROC BackupDifferentialAdventureWord
+GO
+
+--========================================================================
+-- Proceso de restauracion manual
+--========================================================================
+
+-- Listar los dispositivos creados
+SELECT * FROM sys.backup_devices
+GO
+
+-- Verificar el contenido del BACKUP
+RESTORE HEADERONLY FROM AdventureWorks2019_Dispositivo
+GO
+
+-- RESTORE 
+-- NO RECOVERY: permite recuperar los demas backup
+-- Esta en un estado de restaurando, no podes usarla
+-- Podemos usar la ruta completa
+RESTORE DATABASE AdventureWorks2019
+FROM DISK =
+'C:\Programacion\NET\SQLServer\Backup\AdventureWorks2019_FULL_Dispositivo.bak'
+WITH FILE=1, NORECOVERY
+GO
+
+-- Podemos usar el dispositivo creado
+RESTORE DATABASE AdventureWorks2019
+FROM AdventureWorks2019_Dispositivo
+WITH FILE=2, NORECOVERY
+GO
+
+RESTORE DATABASE AdventureWorks2019
+WITH RECOVERY
+GO
+
+--========================================================================
+-- Proceso de restauracion dinamica
+--========================================================================
